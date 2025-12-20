@@ -3,14 +3,11 @@ pragma solidity ^0.8.20;
 
 import "forge-std/Test.sol";
 import "../src/TaskEscrow.sol";
-
-interface IMNEE is IERC20 {
-    function approve(address spender, uint256 amount) external returns (bool);
-}
+import "../src/IMNEE.sol"; // Import the real interface
 
 contract DisputeTest is Test {
     TaskEscrow escrow;
-    address constant MNEE = 0x8ccedbAe4916b79da7F3F612EfB2EB93A2bFD6cF;
+    address constant MNEE_ADDR = 0x8ccedbAe4916b79da7F3F612EfB2EB93A2bFD6cF;
     
     address employer = address(0x111);
     address worker = address(0x222);
@@ -19,8 +16,8 @@ contract DisputeTest is Test {
         string memory rpc = vm.envOr("RPC_URL", string(""));
         vm.createSelectFork(rpc);
         
-        escrow = new TaskEscrow(MNEE);
-        deal(MNEE, employer, 1000e18);
+        escrow = new TaskEscrow(MNEE_ADDR);
+        deal(MNEE_ADDR, employer, 1000e18);
     }
 
     function testDisputeFlow() public {
@@ -28,7 +25,8 @@ contract DisputeTest is Test {
 
         // 1. Hire
         vm.startPrank(employer);
-        IMNEE(MNEE).approve(address(escrow), amount);
+        // Use the real IMNEE interface
+        IMNEE(MNEE_ADDR).approve(address(escrow), amount);
         uint256 taskId = escrow.createTask(worker, amount);
         vm.stopPrank();
 
@@ -49,6 +47,5 @@ contract DisputeTest is Test {
         vm.prank(worker);
         escrow.withdraw(taskId);
         console.log("Passed: Worker withdrew after timeout");
-        console.log("--- Day 5 COMPLETE: Judge & Jury Ready ---");
     }
 }

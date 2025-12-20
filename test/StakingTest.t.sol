@@ -3,11 +3,7 @@ pragma solidity ^0.8.20;
 
 import "forge-std/Test.sol";
 import "../src/AgentRegistry.sol";
-
-interface IMNEE is IERC20 {
-    function approve(address spender, uint256 amount) external returns (bool);
-    function balanceOf(address account) external view returns (uint256);
-}
+import "../src/IMNEE.sol"; // Import the real interface
 
 contract StakingTest is Test {
     AgentRegistry registry;
@@ -29,7 +25,7 @@ contract StakingTest is Test {
         // 1. Give Agent MNEE
         deal(MNEE_ADDR, agent, stake);
 
-        // 2. Approve Registry
+        // 2. Approve Registry using real interface
         vm.startPrank(agent);
         IMNEE(MNEE_ADDR).approve(address(registry), stake);
         
@@ -51,12 +47,10 @@ contract StakingTest is Test {
         console.log("--- Day 6 COMPLETE: Staking & Slashing Works ---");
     }
 
-    // FIXED: Modern way to test for failure
     function testNoMoney_Revert() public {
         address brokeAgent = address(0x999);
         vm.prank(brokeAgent);
         
-        // We explicitly tell Foundry: "The next line MUST fail"
         vm.expectRevert(); 
         registry.registerAgent("SCAMMER", 100e18);
     }

@@ -9,7 +9,7 @@ load_dotenv()
 RPC_URL = "http://127.0.0.1:8545"
 REGISTRY_ADDR = os.getenv("REGISTRY_ADDRESS")
 ESCROW_ADDR = os.getenv("ESCROW_ADDRESS")
-MNEE_ADDR = "0x8ccedbAe4916b79da7F3F612EfB2EB93A2bFD6cF"
+MNEE_ADDR = "0xf7461a489c71EAE6fA1Bfe69F8c3d661De0619Da"
 
 class MneeAgent:
     def __init__(self, name, private_key):
@@ -85,3 +85,15 @@ class MneeAgent:
         # Parse Logs to get TaskID (Advanced)
         # For now, we just trust it worked
         print(f"[{self.name}] ✅ Task Created! Transaction Hash: {receipt.transactionHash.hex()}")
+    
+    def complete_task(self, task_id):
+        """Worker marks the task as done"""
+        print(f"[{self.name}] Completing Task {task_id} on-chain...")
+        func = self.escrow.functions.completeTask(task_id)
+        return self._send_tx(func)
+
+    def withdraw_payment(self, task_id):
+        """Worker withdraws money after the dispute period"""
+        print(f"[{self.name}] Withdrawing payment for Task {task_id}...")
+        func = self.escrow.functions.withdraw(task_id)
+        return self._send_tx(func)

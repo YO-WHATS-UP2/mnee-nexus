@@ -7,7 +7,7 @@ import "../src/IMNEE.sol";
 
 // 2. Inherit from BOTH Script and Test
 contract FundAgents is Script, Test {
-    address constant MNEE_ADDR = 0x8ccedbAe4916b79da7F3F612EfB2EB93A2bFD6cF;
+    address constant MNEE_ADDR = 0xf7461a489c71EAE6fA1Bfe69F8c3d661De0619Da;
 
     // Default Anvil Accounts
     address constant ALICE_WORKER = 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266;
