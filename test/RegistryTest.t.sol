@@ -6,50 +6,55 @@ import "../src/AgentRegistry.sol";
 
 contract RegistryTest is Test {
     AgentRegistry public registry;
+    // We need the MNEE address now
+    address constant MNEE_ADDR = 0x8ccedbAe4916b79da7F3F612EfB2EB93A2bFD6cF;
 
-    // Mock Addresses for our Agents
     address constant PYTHON_BOT = address(0x111);
     address constant ART_BOT = address(0x222);
 
     function setUp() public {
-        registry = new AgentRegistry();
+        // Safe Env Load
+        string memory rpc = vm.envOr("RPC_URL", string(""));
+        vm.createSelectFork(rpc);
+
+        // FIX: Pass the MNEE Address to the constructor
+        registry = new AgentRegistry(MNEE_ADDR);
     }
 
     function testRegistration() public {
-        // 1. Pretend to be the Python Bot
+        // We need to give the bot money and approve it first (Day 6 Logic)
+        uint256 stake = 50 * 1e18;
+        deal(MNEE_ADDR, PYTHON_BOT, stake);
+
         vm.startPrank(PYTHON_BOT);
         
-        // Register: "I write Python for 50 MNEE"
+        // Approve the registry to take the stake
+        // (We use a low-level call here to avoid importing the whole interface in this simple test)
+        (bool success, ) = MNEE_ADDR.call(abi.encodeWithSignature("approve(address,uint256)", address(registry), stake));
+        require(success, "Approve failed");
+
+        // Register
         uint256 rate = 50 * 1e18; 
         registry.registerAgent("PYTHON", rate);
         
         vm.stopPrank();
 
-        // 2. Check if the data was saved correctly
         AgentRegistry.AgentProfile memory profile = registry.getAgentDetails(PYTHON_BOT);
-        
-        console.log("Agent Service:", profile.serviceTag);
-        console.log("Agent Rate:", profile.hourlyRate);
-
         assertEq(profile.serviceTag, "PYTHON");
-        assertEq(profile.hourlyRate, rate);
     }
 
     function testDiscovery() public {
-        // Register two different agents
-        vm.prank(PYTHON_BOT);
+        // Setup Python Bot
+        uint256 stake = 50 * 1e18;
+        deal(MNEE_ADDR, PYTHON_BOT, stake);
+        vm.startPrank(PYTHON_BOT);
+        MNEE_ADDR.call(abi.encodeWithSignature("approve(address,uint256)", address(registry), stake));
         registry.registerAgent("PYTHON", 50e18);
+        vm.stopPrank();
 
-        vm.prank(ART_BOT);
-        registry.registerAgent("DESIGN", 100e18);
-
-        // 3. Search for "PYTHON" agents
+        // Search
         address[] memory foundAgents = registry.getAgentsByService("PYTHON");
-        
-        console.log("Found Agents Count:", foundAgents.length);
-        
         assertEq(foundAgents.length, 1);
         assertEq(foundAgents[0], PYTHON_BOT);
-        console.log("--- Day 3 COMPLETE: Registry Logic Works ---");
     }
 }

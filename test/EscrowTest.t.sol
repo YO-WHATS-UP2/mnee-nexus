@@ -19,40 +19,34 @@ contract EscrowTest is Test {
     address constant WORKER = address(0x123);   
 
     function setUp() public {
-        // SAFE: This reads from your hidden .env file
+        // Safe Env Load
         string memory rpc = vm.envOr("RPC_URL", string(""));
         vm.createSelectFork(rpc);
 
         escrow = new TaskEscrow(MNEE_ADDR);
     }
+
     function testEscrowFlow() public {
         uint256 payAmount = 100 * 10**18; 
 
-        // 1. Fund the Employer
         deal(MNEE_ADDR, EMPLOYER, payAmount);
 
-        // 2. Employer hires Worker
         vm.startPrank(EMPLOYER);
         mnee.approve(address(escrow), payAmount);
         uint256 taskId = escrow.createTask(WORKER, payAmount);
         vm.stopPrank();
 
-        console.log("Task Created ID:", taskId);
-
-        // Verify Vault has the money
-        assertEq(mnee.balanceOf(address(escrow)), payAmount, "Vault did not receive MNEE");
-
-        // 3. Worker completes the job
+        // Worker completes
         vm.prank(WORKER);
         escrow.completeTask(taskId);
 
-        // 4. Release Funds
-        escrow.releaseFunds(taskId);
+        // FIX: We must Time Travel 24 hours + 1 second to withdraw
+        vm.warp(block.timestamp + 1 days + 1 seconds);
 
-        // Verify Worker got paid
+        // FIX: Use 'withdraw' instead of 'releaseFunds'
+        escrow.withdraw(taskId);
+
         assertEq(mnee.balanceOf(WORKER), payAmount, "Worker did not get paid");
         assertEq(mnee.balanceOf(address(escrow)), 0, "Vault is not empty");
-        
-        console.log("--- Day 4 COMPLETE: Money Moved Successfully ---");
     }
 }

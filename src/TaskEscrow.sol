@@ -1,47 +1,41 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-interface IERC20 {
-    function transferFrom(address sender, address recipient, uint256 amount) external returns (bool);
-    function transfer(address recipient, uint256 amount) external returns (bool);
-}
+import "./IMNEE.sol"; // Import shared file
 
 contract TaskEscrow {
-    // The Official MNEE Token Address
     address public immutable MNEE_TOKEN;
+    address public arbiter;
 
-    enum TaskState { Created, Completed, Disputed, Released }
+    enum TaskState { Created, Completed, Disputed, Released, Refunded }
 
     struct Task {
         address employer;
         address worker;
         uint256 amount;
         TaskState state;
-        uint256 createdAt;
         uint256 completedAt;
     }
 
-    // Task ID -> Task Data
     mapping(uint256 => Task) public tasks;
     uint256 public taskCount;
+    
+    uint256 public constant DISPUTE_WINDOW = 1 days;
 
     event TaskCreated(uint256 indexed taskId, address employer, address worker, uint256 amount);
-    event TaskCompleted(uint256 indexed taskId);
-    event FundsReleased(uint256 indexed taskId, address worker, uint256 amount);
+    event TaskCompleted(uint256 indexed taskId, uint256 timestamp);
+    event TaskDisputed(uint256 indexed taskId);
+    event FundsReleased(uint256 indexed taskId, address to);
 
     constructor(address _mneeToken) {
         MNEE_TOKEN = _mneeToken;
+        arbiter = msg.sender;
     }
 
-    // 1. Employer locks money for a specific worker
     function createTask(address _worker, uint256 _amount) external returns (uint256) {
-        require(_worker != address(0), "Invalid worker");
-        require(_amount > 0, "Amount must be > 0");
-
-        // Pull MNEE from Employer to this Vault
-        // (Employer must approve this contract first!)
-        bool success = IERC20(MNEE_TOKEN).transferFrom(msg.sender, address(this), _amount);
-        require(success, "Transfer failed");
+        require(_amount > 0, "Amount > 0");
+        // Use IMNEE interface
+        IMNEE(MNEE_TOKEN).transferFrom(msg.sender, address(this), _amount);
 
         taskCount++;
         tasks[taskCount] = Task({
@@ -49,7 +43,6 @@ contract TaskEscrow {
             worker: _worker,
             amount: _amount,
             state: TaskState.Created,
-            createdAt: block.timestamp,
             completedAt: 0
         });
 
@@ -57,29 +50,49 @@ contract TaskEscrow {
         return taskCount;
     }
 
-    // 2. Worker signals "I am done"
     function completeTask(uint256 _taskId) external {
         Task storage t = tasks[_taskId];
-        require(msg.sender == t.worker, "Only worker can complete");
+        require(msg.sender == t.worker, "Only worker");
         require(t.state == TaskState.Created, "Invalid state");
 
         t.state = TaskState.Completed;
-        t.completedAt = block.timestamp;
+        t.completedAt = block.timestamp; 
         
-        emit TaskCompleted(_taskId);
+        emit TaskCompleted(_taskId, block.timestamp);
     }
 
-    // 3. Release funds (For now, anyone can call this if it's "Completed")
-    // Note: Day 5 will make this "Optimistic" (time-based)
-    function releaseFunds(uint256 _taskId) external {
+    function disputeTask(uint256 _taskId) external {
         Task storage t = tasks[_taskId];
-        require(t.state == TaskState.Completed, "Work not done yet");
-        
+        require(msg.sender == t.employer, "Only employer");
+        require(t.state == TaskState.Completed, "Too late or too early");
+        require(block.timestamp < t.completedAt + DISPUTE_WINDOW, "Dispute window closed");
+
+        t.state = TaskState.Disputed;
+        emit TaskDisputed(_taskId);
+    }
+
+    function withdraw(uint256 _taskId) external {
+        Task storage t = tasks[_taskId];
+        require(t.state == TaskState.Completed, "Invalid state");
+        require(block.timestamp >= t.completedAt + DISPUTE_WINDOW, "Wait for dispute window");
+
         t.state = TaskState.Released;
+        IMNEE(MNEE_TOKEN).transfer(t.worker, t.amount);
         
-        bool success = IERC20(MNEE_TOKEN).transfer(t.worker, t.amount);
-        require(success, "Release failed");
-        
-        emit FundsReleased(_taskId, t.worker, t.amount);
+        emit FundsReleased(_taskId, t.worker);
+    }
+
+    function resolveDispute(uint256 _taskId, bool payWorker) external {
+        require(msg.sender == arbiter, "Only arbiter");
+        Task storage t = tasks[_taskId];
+        require(t.state == TaskState.Disputed, "Not disputed");
+
+        if (payWorker) {
+            t.state = TaskState.Released;
+            IMNEE(MNEE_TOKEN).transfer(t.worker, t.amount);
+        } else {
+            t.state = TaskState.Refunded;
+            IMNEE(MNEE_TOKEN).transfer(t.employer, t.amount);
+        }
     }
 }
