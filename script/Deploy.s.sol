@@ -7,7 +7,7 @@ import "../src/TaskEscrow.sol";
 
 contract DeploySwarm is Script {
     // Official MNEE Address
-    address constant MNEE_ADDR = 0xf7461a489c71EAE6fA1Bfe69F8c3d661De0619Da;
+    address constant MNEE_ADDR = 0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0;
 
     function run() external {
         // We use the default Anvil Private Key (Test Money)

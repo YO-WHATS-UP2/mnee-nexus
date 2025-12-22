@@ -1,0 +1,152 @@
+"use client";
+import { useState, useEffect } from "react";
+import { ethers } from "ethers";
+import SwarmGraph from "./components/SwarmGraph";
+
+// ------------------------------------------------------
+// ⚡ CONFIGURATION (PASTE YOUR TERMINAL OUTPUT HERE)
+// ------------------------------------------------------
+const MNEE_TOKEN_ADDR = "0x610178dA211FEF7D417bC0e6FeD39F05609AD788"; 
+const ESCROW_ADDR     = "0xB7f8BC63BbcaD18155201308C8f3540b07f84F5e";
+// ------------------------------------------------------
+// 📜 MINIMAL ABIS (So we don't need to copy JSON files)
+// ------------------------------------------------------
+const ERC20_ABI = [
+  "function approve(address spender, uint256 amount) public returns (bool)",
+  "function allowance(address owner, address spender) view returns (uint256)"
+];
+const ESCROW_ABI = [
+  "function createTask(address worker, uint256 amount) external returns (uint256)"
+];
+
+// ------------------------------------------------------
+// 🧠 COMPONENT LOGIC
+// ------------------------------------------------------
+interface Agent { id: string; group: number; color: string; role: string; address?: string; x?: number; y?: number; z?: number; }
+
+export default function Home() {
+  const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);
+  const [timeString, setTimeString] = useState<string>("");
+  const [logs, setLogs] = useState<string[]>([]);
+  const [isHiring, setIsHiring] = useState(false);
+
+  // MAPPING: Frontend IDs to Real Anvil Addresses
+  const AGENT_ADDRESSES: {[key: string]: string} = {
+    "Dave": "0x90F79bf6EB2c4f870365E785982E1f101E93b906",
+    "Alice": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+    "Carol": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC"
+  };
+
+  useEffect(() => { setTimeString(new Date().toLocaleTimeString()); addLog("System Online. Link established."); }, []);
+
+  const addLog = (msg: string) => setLogs(prev => [`[${new Date().toLocaleTimeString()}] ${msg}`, ...prev]);
+
+  // 🧨 THE TRIGGER FUNCTION
+  const handleHire = async () => {
+    if (!selectedAgent || !AGENT_ADDRESSES[selectedAgent.id]) return;
+    setIsHiring(true);
+    addLog(`INITIATING CONTRACT FOR ${selectedAgent.id.toUpperCase()}...`);
+
+    try {
+      if (!(window as any).ethereum) throw new Error("No Wallet Found");
+      
+      // 1. Connect to MetaMask
+      const provider = new ethers.BrowserProvider((window as any).ethereum);
+      const signer = await provider.getSigner();
+      addLog(`Wallet Connected: ${await signer.getAddress()}`);
+
+      // 2. Setup Contracts
+      const mneeContract = new ethers.Contract(MNEE_TOKEN_ADDR, ERC20_ABI, signer);
+      const escrowContract = new ethers.Contract(ESCROW_ADDR, ESCROW_ABI, signer);
+      
+      const wage = ethers.parseEther("50"); // 50 MNEE
+      const workerAddr = AGENT_ADDRESSES[selectedAgent.id];
+
+      // 3. Approve Funds
+      addLog("Step 1/2: Requesting MNEE Approval...");
+      const tx1 = await mneeContract.approve(ESCROW_ADDR, wage);
+      await tx1.wait();
+      addLog("✅ Approval Granted.");
+
+      // 4. Create Task
+      addLog("Step 2/2: Depositing to Escrow...");
+      const tx2 = await escrowContract.createTask(workerAddr, wage);
+      await tx2.wait();
+      
+      addLog(`🚀 SUCCESS! Job Created on Blockchain.`);
+      addLog(`👉 Watch your Python Terminal for ${selectedAgent.id}!`);
+
+    } catch (err: any) {
+      console.error(err);
+      addLog(`❌ ERROR: ${err.message || "Transaction Failed"}`);
+    } finally {
+      setIsHiring(false);
+    }
+  };
+
+  return (
+    <main style={{ padding: "2rem", fontFamily: "'Space Mono', monospace", background: "#050505", color: "#e0e0e0", height: "100vh", overflow: "hidden", display: "flex", flexDirection: "column", backgroundImage: "linear-gradient(rgba(0, 255, 255, 0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(0, 255, 255, 0.03) 1px, transparent 1px)", backgroundSize: "30px 30px" }}>
+      <style jsx global>{` @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap'); ::-webkit-scrollbar { width: 8px; } ::-webkit-scrollbar-track { background: #111; } ::-webkit-scrollbar-thumb { background: #333; border-radius: 4px; } `}</style>
+      
+      {/* HEADER */}
+      <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem", flexShrink: 0, borderBottom: "1px solid rgba(255,255,255,0.1)", paddingBottom: "1rem" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "15px" }}>
+          <div style={{ fontSize: "2rem" }}>🐝</div>
+          <div>
+            <h1 style={{ fontSize: "1.8rem", margin: 0, letterSpacing: "-1px", lineHeight: "1" }}>MNEE <span style={{color: "#bf00ff", textShadow: "0 0 20px #bf00ff"}}>NEXUS</span></h1>
+            <span style={{ fontSize: "0.7rem", color: "#666", letterSpacing: "2px" }}>AUTONOMOUS AGENT SWARM</span>
+          </div>
+        </div>
+        <div style={{ color: "#0f0", fontSize: "0.9rem", display: "flex", alignItems: "center", gap: "6px" }}>
+          <span style={{ width: "8px", height: "8px", background: "#0f0", borderRadius: "50%", boxShadow: "0 0 8px #0f0" }}></span> OPERATIONAL
+        </div>
+      </header>
+      
+      {/* CONTENT */}
+      <div style={{ display: "flex", gap: "25px", flex: 1, minHeight: 0 }}>
+        {/* GRAPH */}
+        <div style={{ flex: 3, position: "relative", minWidth: 0, display: "flex", flexDirection: "column", border: "1px solid rgba(0, 243, 255, 0.2)", borderRadius: "12px", overflow: "hidden", boxShadow: "0 0 30px rgba(0,0,0,0.5)" }}>
+           <div style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, background: "linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06))", zIndex: 10, pointerEvents: "none", backgroundSize: "100% 2px, 3px 100%" }}></div>
+           <SwarmGraph onNodeClick={setSelectedAgent} />
+        </div>
+
+        {/* SIDEBAR */}
+        <div style={{ flex: 1, minWidth: "320px", maxWidth: "420px", display: "flex", flexDirection: "column", gap: "20px" }}>
+          
+          {/* CONTROLS */}
+          <div style={{ background: "rgba(20, 20, 20, 0.6)", backdropFilter: "blur(10px)", border: "1px solid rgba(255, 255, 255, 0.1)", borderRadius: "12px", padding: "25px", flex: 1, display: "flex", flexDirection: "column", boxShadow: "0 10px 30px rgba(0,0,0,0.3)" }}>
+            <h3 style={{ borderBottom: "1px solid rgba(255,255,255,0.1)", paddingBottom: "15px", margin: "0 0 20px 0", color: "#888", fontSize: "0.75rem", letterSpacing: "2px", display: "flex", justifyContent: "space-between" }}>
+              <span>TARGET COMMAND</span>
+              {selectedAgent && <span style={{color: selectedAgent.color}}>● LOCKED</span>}
+            </h3>
+            
+            {selectedAgent ? (
+              <div style={{ animation: "fadeIn 0.3s ease-in" }}>
+                <h2 style={{ color: selectedAgent.color, fontSize: "2.5rem", margin: 0, lineHeight: 1 }}>{selectedAgent.id.toUpperCase()}</h2>
+                <div style={{ background: selectedAgent.color, color: "#000", padding: "2px 8px", fontSize: "0.6rem", fontWeight: "bold", borderRadius: "2px", display: "inline-block", marginTop: "4px" }}>{selectedAgent.role}</div>
+                
+                <button 
+                  disabled={isHiring}
+                  onClick={handleHire}
+                  style={{ marginTop: "25px", width: "100%", padding: "14px", background: isHiring ? "#333" : `linear-gradient(45deg, ${selectedAgent.color}22, transparent)`, border: `1px solid ${selectedAgent.color}`, color: isHiring ? "#888" : selectedAgent.color, cursor: isHiring ? "wait" : "pointer", fontFamily: "inherit", fontWeight: "bold", fontSize: "0.8rem", letterSpacing: "1px", transition: "all 0.2s", boxShadow: `0 0 15px ${selectedAgent.color}22` }} 
+                >
+                  {isHiring ? "[ TRANSMITTING... ]" : `[ DEPLOY ${selectedAgent.id.toUpperCase()} ]`}
+                </button>
+              </div>
+            ) : (
+              <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "#444", border: "1px dashed rgba(255,255,255,0.1)", borderRadius: "8px", flexDirection: "column", gap: "10px" }}>
+                <div style={{ fontSize: "2rem", opacity: 0.5 }}>⌖</div><div>AWAITING SELECTION</div>
+              </div>
+            )}
+          </div>
+
+          {/* LOGS */}
+          <div style={{ background: "#080808", border: "1px solid rgba(255,255,255,0.1)", padding: "15px", borderRadius: "12px", height: "250px", overflowY: "auto", display: "flex", flexDirection: "column", gap: "6px", fontFamily: "monospace", fontSize: "0.75rem", boxShadow: "inset 0 0 20px rgba(0,0,0,0.8)" }}>
+            {logs.map((log, i) => <div key={i} style={{ color: i === 0 ? "#fff" : "#666" }}>{log}</div>)}
+          </div>
+
+        </div>
+      </div>
+    </main>
+  );
+}

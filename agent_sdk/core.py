@@ -1,99 +1,142 @@
-import os
+import time
 import json
 from web3 import Web3
+import google.generativeai as genai
+import os
 from dotenv import load_dotenv
 
 load_dotenv()
 
-# Constants
-RPC_URL = "http://127.0.0.1:8545"
-REGISTRY_ADDR = os.getenv("REGISTRY_ADDRESS")
-ESCROW_ADDR = os.getenv("ESCROW_ADDRESS")
-MNEE_ADDR = "0xf7461a489c71EAE6fA1Bfe69F8c3d661De0619Da"
+# --- CONFIGURATION ---
+ANVIL_RPC = "http://127.0.0.1:8545"
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+
+if GEMINI_API_KEY:
+    genai.configure(api_key=GEMINI_API_KEY)
+    model = genai.GenerativeModel('gemini-pro')
+else:
+    model = None
+
+w3 = Web3(Web3.HTTPProvider(ANVIL_RPC))
+
+# --- AGENTS ---
+AGENTS = [
+    {"name": "Alice", "role": "Python Dev", "pk": "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"}, 
+    {"name": "Carol", "role": "Auditor",    "pk": "0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a"}, 
+    {"name": "Dave",  "role": "Analyst",    "pk": "0x7c852118294e51e653712a81e05800f419141751be58f605c371e15141b007a6"}  
+]
+
+# --- MINIMAL ABI ---
+ESCROW_ABI_JSON = """[
+    {
+        "inputs": [{"internalType": "uint256", "name": "taskId", "type": "uint256"}],
+        "name": "completeTask",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    }
+]"""
+ESCROW_ABI = json.loads(ESCROW_ABI_JSON)
 
 class MneeAgent:
-    def __init__(self, name, private_key):
+    def __init__(self, name, role, private_key, escrow_address):
         self.name = name
-        self.w3 = Web3(Web3.HTTPProvider(RPC_URL))
-        self.account = self.w3.eth.account.from_key(private_key)
+        self.role = role
+        self.account = w3.eth.account.from_key(private_key)
         self.address = self.account.address
-        
-        # Load ABIs
-        self.registry = self._load_contract(REGISTRY_ADDR, "AgentRegistry")
-        self.escrow = self._load_contract(ESCROW_ADDR, "TaskEscrow")
-        self.mnee = self._load_contract(MNEE_ADDR, "IMNEE") # Uses the interface ABI
-        
-    def _load_contract(self, address, name):
-        # Tries to find the JSON artifact in the 'out' folder
-        # Note: IMNEE json might be under out/IMNEE.sol/IMNEE.json
-        path_options = [
-            f"out/{name}.sol/{name}.json", 
-            f"out/{name}.sol/{name}.json" # Fallback if needed
-        ]
-        
-        abi = None
-        for path in path_options:
-            if os.path.exists(path):
-                with open(path, "r") as f:
-                    abi = json.load(f)["abi"]
-                break
-        
-        if not abi:
-            raise Exception(f"Could not find ABI for {name}")
-            
-        return self.w3.eth.contract(address=address, abi=abi)
+        self.escrow = w3.eth.contract(address=escrow_address, abi=ESCROW_ABI)
 
-    def _send_tx(self, func_call):
-        # Helper to build, sign, and send a transaction
-        tx = func_call.build_transaction({
-            'from': self.address,
-            'nonce': self.w3.eth.get_transaction_count(self.address),
-            'gas': 2000000,
-            'gasPrice': self.w3.to_wei('5', 'gwei')
-        })
-        signed_tx = self.w3.eth.account.sign_transaction(tx, self.account.key)
-        tx_hash = self.w3.eth.send_raw_transaction(signed_tx.raw_transaction)
-        receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash)
-        return receipt
+    def think(self, prompt):
+        if not model: return "I am thinking... (Gemini is sleeping)"
+        try:
+            return model.generate_content(f"You are {self.role}. {prompt}").text
+        except: return "I am thinking..."
 
-    def approve_token(self, spender_addr, amount_ether):
-        print(f"[{self.name}] Approving {amount_ether} MNEE to {spender_addr[:6]}...")
-        amount_wei = self.w3.to_wei(amount_ether, 'ether')
-        self._send_tx(self.mnee.functions.approve(spender_addr, amount_wei))
-
-    def register_service(self, service_tag, rate_ether):
-        print(f"[{self.name}] Registering as {service_tag} for {rate_ether} MNEE/hr...")
-        
-        # 1. Approve Registry to take Stake (50 MNEE)
-        self.approve_token(REGISTRY_ADDR, 50)
-        
-        # 2. Register
-        rate_wei = self.w3.to_wei(rate_ether, 'ether')
-        self._send_tx(self.registry.functions.registerAgent(service_tag, rate_wei))
-        print(f"[{self.name}] ✅ Registration Successful!")
-
-    def hire_worker(self, worker_addr, payment_ether):
-        print(f"[{self.name}] Hiring {worker_addr[:6]} for {payment_ether} MNEE...")
-        
-        # 1. Approve Escrow to take Payment
-        self.approve_token(ESCROW_ADDR, payment_ether)
-        
-        # 2. Create Task
-        payment_wei = self.w3.to_wei(payment_ether, 'ether')
-        receipt = self._send_tx(self.escrow.functions.createTask(worker_addr, payment_wei))
-        
-        # Parse Logs to get TaskID (Advanced)
-        # For now, we just trust it worked
-        print(f"[{self.name}] ✅ Task Created! Transaction Hash: {receipt.transactionHash.hex()}")
-    
     def complete_task(self, task_id):
-        """Worker marks the task as done"""
-        print(f"[{self.name}] Completing Task {task_id} on-chain...")
-        func = self.escrow.functions.completeTask(task_id)
-        return self._send_tx(func)
+        try:
+            print(f"   -> Submitting completion for Task {task_id}...")
+            tx = self.escrow.functions.completeTask(task_id).build_transaction({
+                'from': self.address, 'nonce': w3.eth.get_transaction_count(self.address),
+                'gas': 200000, 'gasPrice': w3.to_wei('2', 'gwei')
+            })
+            signed = w3.eth.account.sign_transaction(tx, self.account.key)
+            w3.eth.send_raw_transaction(signed.raw_transaction)
+            print(f"   -> Tx Sent!")
+        except Exception as e:
+            # If it fails, it usually means we already finished it. Safe to ignore.
+            pass
 
-    def withdraw_payment(self, task_id):
-        """Worker withdraws money after the dispute period"""
-        print(f"[{self.name}] Withdrawing payment for Task {task_id}...")
-        func = self.escrow.functions.withdraw(task_id)
-        return self._send_tx(func)
+# --- STATE MANAGEMENT ---
+last_checked_block = 0
+
+def check_for_tasks(escrow_address):
+    global last_checked_block
+    
+    current_block = w3.eth.block_number
+    
+    # INITIALIZATION:
+    # If this is the first run, set the pointer to NOW.
+    # This effectively "forgets" all history.
+    if last_checked_block == 0:
+        last_checked_block = current_block
+        print(f"👀 WATCHING FOR NEW TASKS starting at Block {current_block}...")
+        return
+
+    # If no new blocks have been mined, do nothing
+    if current_block <= last_checked_block:
+        return
+
+    # Scan only the NEW blocks
+    try:
+        logs = w3.eth.get_logs({
+            'fromBlock': last_checked_block + 1,
+            'toBlock': current_block,
+            'address': escrow_address
+        })
+    except:
+        return
+
+    for log in logs:
+        try:
+            topics = log['topics']
+            data_hex = log['data'].hex().replace("0x", "")
+
+            if len(topics) < 2: continue
+            
+            # --- DECODER ---
+            # Topic[1] is Task ID
+            task_id = int(topics[1].hex(), 16)
+
+            # Data Chunk 2 is Worker (Chars 64-128)
+            if len(data_hex) < 128: continue
+            worker_hex = data_hex[64:128]
+            worker = w3.to_checksum_address("0x" + worker_hex[-40:])
+            
+            # Data Chunk 3 is Amount (Chars 128-192)
+            amount = 0
+            if len(data_hex) >= 192:
+                amount = int(data_hex[128:192], 16)
+
+            print(f"🔎 [Chain] NEW TASK DETECTED: #{task_id} for {worker}")
+
+            # WAKE AGENT
+            for agent_data in AGENTS:
+                agent_addr = w3.eth.account.from_key(agent_data['pk']).address
+                
+                if agent_addr.lower() == worker.lower():
+                    print(f"⚡ {agent_data['name']} MATCHED! Waking up...")
+                    agent = MneeAgent(agent_data['name'], agent_data['role'], agent_data['pk'], escrow_address)
+                    
+                    print(f"🧠 [{agent.name}] Thinking...")
+                    result = agent.think(f"Analyze Job #{task_id} with {amount} tokens.")
+                    print(f"📝 [{agent.name}] Output: {result[:100]}...")
+                    
+                    agent.complete_task(task_id)
+                    print(f"✅ [{agent.name}] Job Complete!\n")
+
+        except Exception as e:
+            continue
+
+    # UPDATE POINTER (Crucial Step!)
+    # We move the pointer forward so we never scan these blocks again.
+    last_checked_block = current_block
