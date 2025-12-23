@@ -1,23 +1,24 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { ethers } from "ethers";
 import SwarmGraph from "./components/SwarmGraph";
 
 // ------------------------------------------------------
-// ⚡ CONFIGURATION (VERIFIED ADDRESSES)
+// ⚡ CONFIGURATION
 // ------------------------------------------------------
 const MNEE_TOKEN_ADDR = "0x610178dA211FEF7D417bC0e6FeD39F05609AD788"; 
-const ESCROW_ADDR     = "0xa82fF9aFd8f496c3d6ac40E2a0F282E47488CFc9";
+const ESCROW_ADDR     = "0xa82fF9aFd8f496c3d6ac40E2a0F282E47488CFc9"; // Make sure this matches Python!
 
 // ------------------------------------------------------
-// 📜 MINIMAL ABIS
+// 📜 ABIS
 // ------------------------------------------------------
 const ERC20_ABI = [
   "function approve(address spender, uint256 amount) public returns (bool)",
   "function allowance(address owner, address spender) view returns (uint256)"
 ];
 const ESCROW_ABI = [
-  "function createTask(address worker, uint256 amount) external returns (uint256)"
+  "function createTask(address worker, uint256 amount) external returns (uint256)",
+  "event TaskCompleted(uint256 indexed taskId, string output)" // <--- We listen for this!
 ];
 
 // ------------------------------------------------------
@@ -27,33 +28,63 @@ interface Agent { id: string; group: number; color: string; role: string; addres
 
 export default function Home() {
   const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);
-  const [timeString, setTimeString] = useState<string>("");
   const [logs, setLogs] = useState<string[]>([]);
   const [isHiring, setIsHiring] = useState(false);
+  const providerRef = useRef<any>(null);
 
   // MAPPING: Frontend IDs to Real Anvil Addresses
   const AGENT_ADDRESSES: {[key: string]: string} = {
-    "Dave": "0x90F79bf6EB2c4f870365E785982E1f101E93b906", // The Analyst
-    "Alice": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", // The Python Dev
-    "Carol": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8"  // The Auditor (Updated to Anvil Account #1)
+    "Dave": "0x90F79bf6EB2c4f870365E785982E1f101E93b906", 
+    "Alice": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", 
+    "Carol": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8"  
   };
-
-  useEffect(() => { setTimeString(new Date().toLocaleTimeString()); addLog("System Online. Link established."); }, []);
 
   const addLog = (msg: string) => setLogs(prev => [`[${new Date().toLocaleTimeString()}] ${msg}`, ...prev]);
 
+  // SETUP LISTENER ON MOUNT
+  useEffect(() => {
+    addLog("System Online. Link established.");
+    
+    const setupListener = async () => {
+        if (!(window as any).ethereum) return;
+        const provider = new ethers.BrowserProvider((window as any).ethereum);
+        const escrowContract = new ethers.Contract(ESCROW_ADDR, ESCROW_ABI, provider);
+
+        // Listen for ANY TaskCompleted event
+        escrowContract.on("TaskCompleted", (taskId, output) => {
+            console.log("EVENT RECEIVED:", taskId, output);
+            addLog(`📨 INCOMING TRANSMISSION (Task #${taskId}):`);
+            addLog(`> "${output}"`);
+        });
+
+        providerRef.current = provider; // Keep reference
+    };
+
+    setupListener();
+
+    // Cleanup listener when page closes
+    return () => {
+        if(providerRef.current) {
+            providerRef.current.removeAllListeners();
+        }
+    };
+  }, []);
+
   // 🧨 THE TRIGGER FUNCTION
   const handleHire = async () => {
-    // Safety check for case-sensitivity (Dave vs dave)
-    if (!selectedAgent || !selectedAgent.id) {
-      addLog("❌ Error: No agent selected.");
-      return;
+    // 1. SAFETY CHECK: Stop immediately if nobody is selected
+    if (!selectedAgent) {
+        addLog("❌ Error: No agent selected.");
+        return;
     }
+
+    // Now it is safe to access .id because we know selectedAgent exists
+    const rawId = selectedAgent.id; 
+    const agentId = rawId.charAt(0).toUpperCase() + rawId.slice(1);
     
-    const agentId = selectedAgent.id.charAt(0).toUpperCase() + selectedAgent.id.slice(1);
-    
+    // 2. ADDRESS CHECK
     if (!AGENT_ADDRESSES[agentId]) {
-         addLog(`❌ Error: Agent ${selectedAgent?.id} address not found in registry.`);
+         addLog(`❌ Error: Address for '${agentId}' not found in registry.`);
          return;
     }
 
@@ -62,32 +93,25 @@ export default function Home() {
 
     try {
       if (!(window as any).ethereum) throw new Error("No Wallet Found");
-      
-      // 1. Connect to MetaMask
       const provider = new ethers.BrowserProvider((window as any).ethereum);
       const signer = await provider.getSigner();
-      addLog(`Wallet Connected: ${await signer.getAddress()}`);
 
-      // 2. Setup Contracts
       const mneeContract = new ethers.Contract(MNEE_TOKEN_ADDR, ERC20_ABI, signer);
       const escrowContract = new ethers.Contract(ESCROW_ADDR, ESCROW_ABI, signer);
       
-      const wage = ethers.parseEther("10"); // 10 MNEE
+      const wage = ethers.parseEther("10"); 
       const workerAddr = AGENT_ADDRESSES[agentId];
 
-      // 3. Approve Funds
       addLog("Step 1/2: Requesting MNEE Approval...");
       const tx1 = await mneeContract.approve(ESCROW_ADDR, wage);
       await tx1.wait();
       addLog("✅ Approval Granted.");
 
-      // 4. Create Task
       addLog("Step 2/2: Depositing to Escrow...");
       const tx2 = await escrowContract.createTask(workerAddr, wage);
       await tx2.wait();
       
-      addLog(`🚀 SUCCESS! Job Created on Blockchain.`);
-      addLog(`👉 Watch your Python Terminal for ${agentId}!`);
+      addLog(`🚀 SUCCESS! Signal Sent. Waiting for response...`);
 
     } catch (err: any) {
       console.error(err);
