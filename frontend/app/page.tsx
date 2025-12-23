@@ -4,12 +4,13 @@ import { ethers } from "ethers";
 import SwarmGraph from "./components/SwarmGraph";
 
 // ------------------------------------------------------
-// ⚡ CONFIGURATION (PASTE YOUR TERMINAL OUTPUT HERE)
+// ⚡ CONFIGURATION (VERIFIED ADDRESSES)
 // ------------------------------------------------------
 const MNEE_TOKEN_ADDR = "0x610178dA211FEF7D417bC0e6FeD39F05609AD788"; 
-const ESCROW_ADDR     = "0xB7f8BC63BbcaD18155201308C8f3540b07f84F5e";
+const ESCROW_ADDR     = "0xa82fF9aFd8f496c3d6ac40E2a0F282E47488CFc9";
+
 // ------------------------------------------------------
-// 📜 MINIMAL ABIS (So we don't need to copy JSON files)
+// 📜 MINIMAL ABIS
 // ------------------------------------------------------
 const ERC20_ABI = [
   "function approve(address spender, uint256 amount) public returns (bool)",
@@ -32,9 +33,9 @@ export default function Home() {
 
   // MAPPING: Frontend IDs to Real Anvil Addresses
   const AGENT_ADDRESSES: {[key: string]: string} = {
-    "Dave": "0x90F79bf6EB2c4f870365E785982E1f101E93b906",
-    "Alice": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
-    "Carol": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC"
+    "Dave": "0x90F79bf6EB2c4f870365E785982E1f101E93b906", // The Analyst
+    "Alice": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", // The Python Dev
+    "Carol": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8"  // The Auditor (Updated to Anvil Account #1)
   };
 
   useEffect(() => { setTimeString(new Date().toLocaleTimeString()); addLog("System Online. Link established."); }, []);
@@ -43,9 +44,21 @@ export default function Home() {
 
   // 🧨 THE TRIGGER FUNCTION
   const handleHire = async () => {
-    if (!selectedAgent || !AGENT_ADDRESSES[selectedAgent.id]) return;
+    // Safety check for case-sensitivity (Dave vs dave)
+    if (!selectedAgent || !selectedAgent.id) {
+      addLog("❌ Error: No agent selected.");
+      return;
+    }
+    
+    const agentId = selectedAgent.id.charAt(0).toUpperCase() + selectedAgent.id.slice(1);
+    
+    if (!AGENT_ADDRESSES[agentId]) {
+         addLog(`❌ Error: Agent ${selectedAgent?.id} address not found in registry.`);
+         return;
+    }
+
     setIsHiring(true);
-    addLog(`INITIATING CONTRACT FOR ${selectedAgent.id.toUpperCase()}...`);
+    addLog(`INITIATING CONTRACT FOR ${agentId.toUpperCase()}...`);
 
     try {
       if (!(window as any).ethereum) throw new Error("No Wallet Found");
@@ -59,8 +72,8 @@ export default function Home() {
       const mneeContract = new ethers.Contract(MNEE_TOKEN_ADDR, ERC20_ABI, signer);
       const escrowContract = new ethers.Contract(ESCROW_ADDR, ESCROW_ABI, signer);
       
-      const wage = ethers.parseEther("50"); // 50 MNEE
-      const workerAddr = AGENT_ADDRESSES[selectedAgent.id];
+      const wage = ethers.parseEther("10"); // 10 MNEE
+      const workerAddr = AGENT_ADDRESSES[agentId];
 
       // 3. Approve Funds
       addLog("Step 1/2: Requesting MNEE Approval...");
@@ -74,7 +87,7 @@ export default function Home() {
       await tx2.wait();
       
       addLog(`🚀 SUCCESS! Job Created on Blockchain.`);
-      addLog(`👉 Watch your Python Terminal for ${selectedAgent.id}!`);
+      addLog(`👉 Watch your Python Terminal for ${agentId}!`);
 
     } catch (err: any) {
       console.error(err);
