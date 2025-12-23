@@ -6,8 +6,8 @@ import SwarmGraph from "./components/SwarmGraph";
 // ------------------------------------------------------
 // ⚡ CONFIGURATION
 // ------------------------------------------------------
-const MNEE_TOKEN_ADDR = "0x610178dA211FEF7D417bC0e6FeD39F05609AD788"; 
-const ESCROW_ADDR     = "0xa82fF9aFd8f496c3d6ac40E2a0F282E47488CFc9"; // Make sure this matches Python!
+const MNEE_TOKEN_ADDR = "0x4030B20dCFBF4Dd4EE040F2cFC7B773c7e3344Fa"; 
+const ESCROW_ADDR     = "0xab9270a58bEAC035245059fC7f686DE63e67bC73"; // Make sure this matches Python!
 
 // ------------------------------------------------------
 // 📜 ABIS
@@ -34,9 +34,9 @@ export default function Home() {
 
   // MAPPING: Frontend IDs to Real Anvil Addresses
   const AGENT_ADDRESSES: {[key: string]: string} = {
-    "Dave": "0x90F79bf6EB2c4f870365E785982E1f101E93b906", 
-    "Alice": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", 
-    "Carol": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8"  
+    "Dave":  "0x3F5643702798166FD76F928249C0e022963025E1", 
+    "Alice": "0x3F5643702798166FD76F928249C0e022963025E1", 
+    "Carol": "0x3F5643702798166FD76F928249C0e022963025E1"  
   };
 
   const addLog = (msg: string) => setLogs(prev => [`[${new Date().toLocaleTimeString()}] ${msg}`, ...prev]);

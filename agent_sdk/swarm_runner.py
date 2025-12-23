@@ -8,7 +8,7 @@ from core import check_for_tasks
 # ---------------------------------------------------------
 # ⚠️ PASTE YOUR ESCROW ADDRESS HERE (From Step 1)
 # ---------------------------------------------------------
-ESCROW_ADDRESS = "0xa82fF9aFd8f496c3d6ac40E2a0F282E47488CFc9" # <--- PASTE HERE
+ESCROW_ADDRESS = "0xab9270a58bEAC035245059fC7f686DE63e67bC73" # <--- PASTE HERE
 
 def main():
     print(f"\n--- 🐝 MNEE SWARM ACTIVE ---")
