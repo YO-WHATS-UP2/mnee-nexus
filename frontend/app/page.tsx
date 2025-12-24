@@ -7,7 +7,7 @@ import SwarmGraph from "./components/SwarmGraph";
 // ⚡ CONFIGURATION
 // ------------------------------------------------------
 const MNEE_TOKEN_ADDR = "0x4030B20dCFBF4Dd4EE040F2cFC7B773c7e3344Fa"; 
-const ESCROW_ADDR     = "0xab9270a58bEAC035245059fC7f686DE63e67bC73"; // Make sure this matches Python!
+const ESCROW_ADDR     = "0xab9270a58bEAC035245059fC7f686DE63e67bC73";
 
 // ------------------------------------------------------
 // 📜 ABIS
@@ -18,7 +18,7 @@ const ERC20_ABI = [
 ];
 const ESCROW_ABI = [
   "function createTask(address worker, uint256 amount) external returns (uint256)",
-  "event TaskCompleted(uint256 indexed taskId, string output)" // <--- We listen for this!
+  "event TaskCompleted(uint256 indexed taskId, string output)" 
 ];
 
 // ------------------------------------------------------
@@ -32,7 +32,7 @@ export default function Home() {
   const [isHiring, setIsHiring] = useState(false);
   const providerRef = useRef<any>(null);
 
-  // MAPPING: Frontend IDs to Real Anvil Addresses
+  // MAPPING: Frontend IDs to Real Sepolia Addresses
   const AGENT_ADDRESSES: {[key: string]: string} = {
     "Dave":  "0x3F5643702798166FD76F928249C0e022963025E1", 
     "Alice": "0x3F5643702798166FD76F928249C0e022963025E1", 
@@ -54,7 +54,8 @@ export default function Home() {
         escrowContract.on("TaskCompleted", (taskId, output) => {
             console.log("EVENT RECEIVED:", taskId, output);
             addLog(`📨 INCOMING TRANSMISSION (Task #${taskId}):`);
-            addLog(`> "${output}"`);
+            // We pass the raw output here so the detector can find the link
+            addLog(`${output}`); 
         });
 
         providerRef.current = provider; // Keep reference
@@ -72,17 +73,14 @@ export default function Home() {
 
   // 🧨 THE TRIGGER FUNCTION
   const handleHire = async () => {
-    // 1. SAFETY CHECK: Stop immediately if nobody is selected
     if (!selectedAgent) {
         addLog("❌ Error: No agent selected.");
         return;
     }
 
-    // Now it is safe to access .id because we know selectedAgent exists
     const rawId = selectedAgent.id; 
     const agentId = rawId.charAt(0).toUpperCase() + rawId.slice(1);
     
-    // 2. ADDRESS CHECK
     if (!AGENT_ADDRESSES[agentId]) {
          addLog(`❌ Error: Address for '${agentId}' not found in registry.`);
          return;
@@ -98,8 +96,10 @@ export default function Home() {
 
       const mneeContract = new ethers.Contract(MNEE_TOKEN_ADDR, ERC20_ABI, signer);
       const escrowContract = new ethers.Contract(ESCROW_ADDR, ESCROW_ABI, signer);
-      
-      const wage = ethers.parseEther("10"); 
+      let wageAmount = "10"; // Default (Alice)
+      if (agentId === "Carol") wageAmount = "11";
+      if (agentId === "Dave")  wageAmount = "12";
+      const wage = ethers.parseEther(wageAmount);
       const workerAddr = AGENT_ADDRESSES[agentId];
 
       addLog("Step 1/2: Requesting MNEE Approval...");
@@ -177,9 +177,43 @@ export default function Home() {
             )}
           </div>
 
-          {/* LOGS */}
-          <div style={{ background: "#080808", border: "1px solid rgba(255,255,255,0.1)", padding: "15px", borderRadius: "12px", height: "250px", overflowY: "auto", display: "flex", flexDirection: "column", gap: "6px", fontFamily: "monospace", fontSize: "0.75rem", boxShadow: "inset 0 0 20px rgba(0,0,0,0.8)" }}>
-            {logs.map((log, i) => <div key={i} style={{ color: i === 0 ? "#fff" : "#666" }}>{log}</div>)}
+          {/* LOGS (UPDATED WITH LINK DETECTOR) */}
+          <div style={{ background: "#080808", border: "1px solid rgba(255,255,255,0.1)", padding: "15px", borderRadius: "12px", height: "300px", overflowY: "auto", display: "flex", flexDirection: "column", gap: "10px", fontFamily: "monospace", fontSize: "0.75rem", boxShadow: "inset 0 0 20px rgba(0,0,0,0.8)" }}>
+            {logs.map((log, i) => {
+                // 🔍 DETECTOR: Check if this log contains an IPFS/HTTP Link
+                const hasLink = log.includes("http");
+                
+                return (
+                    <div key={i} style={{ color: i === 0 ? "#fff" : "#888", borderBottom: "1px solid rgba(255,255,255,0.05)", paddingBottom: "8px" }}>
+                        {hasLink ? (
+                            // 🎨 RENDER IMAGE + LINK
+                            <div>
+                                <div style={{marginBottom: "5px"}}>{log.split("http")[0]}</div>
+                                
+                                <a 
+                                    href={`http${log.split("http")[1]}`} 
+                                    target="_blank" 
+                                    rel="noopener noreferrer"
+                                    style={{ color: "#00f3ff", textDecoration: "underline", display: "block", marginBottom: "8px", wordBreak: "break-all" }}
+                                >
+                                    [ VIEW IMAGE ON IPFS ]
+                                </a>
+
+                                <div style={{ borderRadius: "8px", overflow: "hidden", border: "1px solid #333", background: "#000" }}>
+                                    <img 
+                                        src={`http${log.split("http")[1]}`} 
+                                        alt="Agent Generated Art" 
+                                        style={{ width: "100%", height: "auto", display: "block" }} 
+                                    />
+                                </div>
+                            </div>
+                        ) : (
+                            // 📄 RENDER NORMAL TEXT
+                            log
+                        )}
+                    </div>
+                )
+            })}
           </div>
 
         </div>
